@@ -2,6 +2,21 @@ use macroquad::{prelude::*, rand::RandGenerator};
 
 static RNG: RandGenerator = RandGenerator::new();
 
+const RADIUS_MIN: f32 = 6.0;
+const RADIUS_MAX: f32 = 12.0;
+
+const VELOCITY_MIN: f32 = -20.0;
+const VELOCITY_MAX: f32 = 20.0;
+
+const MARGIN: f32 = 50.0;
+const WIDTH: f32 = 1800.0;
+const HEIGHT: f32 = 950.0;
+
+const FRAME_TIME: f32 = 1.0 / 60.0;
+
+const FLIP_Y: Mat2 = Mat2::from_cols(Vec2::new(1.0, 0.0), Vec2::new(0.0, -1.0));
+const FLIP_X: Mat2 = Mat2::from_cols(Vec2::new(-1.0, 0.0), Vec2::new(0.0, 1.0));
+
 struct World {
     balls: Vec<Ball>,
 }
@@ -45,12 +60,12 @@ impl World {
         }
 
         for b in &mut self.balls {
-            b.update(1.0 / 60.0);
+            b.update(FRAME_TIME);
         }
     }
     fn draw(&self) {
         clear_background(BLACK);
-        draw_rectangle_lines(50.0, 50.0, 1750.0, 950.0, 2.0, BLUE);
+        draw_rectangle_lines(MARGIN, MARGIN, WIDTH, HEIGHT, 2.0, BLUE);
         for b in &self.balls {
             b.draw();
         }
@@ -75,11 +90,11 @@ impl Ball {
         }
     }
     fn random() -> Self {
-        let radius = RNG.gen_range(4.0, 8.0);
-        let x = RNG.gen_range(100.0, 1800.0);
-        let y = RNG.gen_range(100.0, 1000.0);
-        let vx = RNG.gen_range::<f32>(-20.0, 20.0);
-        let vy = RNG.gen_range::<f32>(-20.0, 20.0);
+        let radius = RNG.gen_range(RADIUS_MIN, RADIUS_MAX).floor();
+        let x = RNG.gen_range(MARGIN + radius, WIDTH + MARGIN - radius);
+        let y = RNG.gen_range(MARGIN + radius, HEIGHT + MARGIN - radius);
+        let vx = RNG.gen_range::<f32>(VELOCITY_MIN, VELOCITY_MAX);
+        let vy = RNG.gen_range::<f32>(VELOCITY_MIN, VELOCITY_MAX);
         let color = Color::new(
             RNG.gen_range(0.0, 1.0),
             RNG.gen_range(0.0, 1.0),
@@ -102,8 +117,8 @@ impl Ball {
         let p1 = self.position;
         let p2 = b.position;
 
-        self.velocity = get_velocity(v1, v2, m1, m2, p1, p2);
-        b.velocity = get_velocity(v2, v1, m2, m1, p2, p1);
+        self.velocity = compute_velocity_after_collision(v1, v2, m1, m2, p1, p2);
+        b.velocity = compute_velocity_after_collision(v2, v1, m2, m1, p2, p1);
     }
     fn update(&mut self, dt: f32) {
         // self.speed *= 0.999;
@@ -116,22 +131,16 @@ impl Ball {
         self.position += self.velocity * dt;
     }
     fn compute_collision(&mut self) {
-        if (self.position.x - self.radius < 50.0 && self.velocity.x < 0.0)
-            || (self.position.x + self.radius > 1800.0 && self.velocity.x > 0.0)
+        if (self.position.x - self.radius < MARGIN && self.velocity.x < 0.0)
+            || (self.position.x + self.radius > WIDTH + MARGIN && self.velocity.x > 0.0)
         {
-            self.velocity = Mat2 {
-                x_axis: Vec2::new(-1.0, 0.0),
-                y_axis: Vec2::new(0.0, 1.0),
-            } * self.velocity;
+            self.velocity = FLIP_X * self.velocity;
         }
 
-        if (self.position.y - self.radius < 50.0 && self.velocity.y < 0.0)
-            || (self.position.y + self.radius > 1000.0 && self.velocity.y > 0.0)
+        if (self.position.y - self.radius < MARGIN && self.velocity.y < 0.0)
+            || (self.position.y + self.radius > HEIGHT + MARGIN && self.velocity.y > 0.0)
         {
-            self.velocity = Mat2 {
-                x_axis: Vec2::new(1.0, 0.0),
-                y_axis: Vec2::new(0.0, -1.0),
-            } * self.velocity;
+            self.velocity = FLIP_Y * self.velocity;
         }
     }
     fn draw(&self) {
@@ -139,7 +148,14 @@ impl Ball {
     }
 }
 
-fn get_velocity(v1: Vec2, v2: Vec2, m1: f32, m2: f32, p1: Vec2, p2: Vec2) -> Vec2 {
+fn compute_velocity_after_collision(
+    v1: Vec2,
+    v2: Vec2,
+    m1: f32,
+    m2: f32,
+    p1: Vec2,
+    p2: Vec2,
+) -> Vec2 {
     let dpos = p1 - p2;
 
     v1 - (2.0 * m2 / (m1 + m2) * (v1 - v2).dot(dpos) / dpos.length_squared() * dpos)
@@ -155,7 +171,7 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut world = World::new();
-    for _ in 0..2000 {
+    for _ in 0..1000 {
         let mut new_ball = Ball::random();
         while world.balls.iter().any(|b| b.collides_with(&new_ball)) {
             new_ball = Ball::random();
@@ -165,8 +181,8 @@ async fn main() {
     let mut total_time = 0.0;
     loop {
         total_time += get_frame_time();
-        while total_time >= 1.0 / 60.0 {
-            total_time -= 1.0 / 60.0;
+        while total_time >= FRAME_TIME {
+            total_time -= FRAME_TIME;
             world.tick();
             world.draw();
             next_frame().await;
